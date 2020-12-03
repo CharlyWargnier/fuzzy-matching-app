@@ -1,0 +1,7 @@
+streamlit 
+streamlit_echarts 
+pyecharts
+fuzzywuzzy 
+numpy 
+pandas 
+base64
