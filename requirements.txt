@@ -1,7 +1,9 @@
-streamlit 
+
+streamlit==0.70.0
 streamlit-echarts==0.1.0
 pyecharts==1.9.0
-#pyecharts
+
+
 fuzzywuzzy 
 numpy 
 pandas 
