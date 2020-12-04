@@ -9,5 +9,4 @@ streamlit-echarts
 
 fuzzywuzzy 
 numpy 
-pandas 
-base64
+pandas
