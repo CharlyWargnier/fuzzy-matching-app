@@ -77,6 +77,14 @@ fig, axs = plt.subplots(1, 2, sharey=True, tight_layout=True)
 axs[0].hist(x, bins=n_bins)
 axs[1].hist(y, bins=n_bins)
 
+# Setting column names
+
+COL_BOX1 = "Box #01"
+COL_BOX2 = "Box #02"
+COL_PARTIAL = "Partial"
+COL_TOKEN_SET = "Token set"
+COL_TOKEN_SORT = "Token sort"
+
 ###############################################
 
 #st.markdown('## **① ▼ Paste some keywords **')
@@ -93,23 +101,21 @@ with c29:
     text = st.text_area("One Keyword or URL per line (1000 max)", height=175)  
     lines = text.split("\n")  # A list of lines   
   
-    linesDeduped = []
+    linesDeduped1 = []
     
     for x in lines:    
-        linesDeduped.append(x)
+        linesDeduped1.append(x)
 
-    #linesDeduped = list(dict.fromkeys(linesDeduped))
+    #linesDeduped1 = list(dict.fromkeys(linesDeduped1))
    
-    if len(linesDeduped) > MAX_LINES:
+    if len(linesDeduped1) > MAX_LINES:
         st.warning(f"⚠️ Only the first 1000 elements will be reviewed. More coming, stay tuned! 😊")
-        linesDeduped = linesDeduped[:MAX_LINES]
+        linesDeduped1 = linesDeduped1[:MAX_LINES]
         #st.stop()
 
     identifier_list = ('https://', 'http://')  # tuple, not list
-    notHTTP = [elem for elem in linesDeduped if not elem.startswith(identifier_list)]
+    notHTTP = [elem for elem in linesDeduped1 if not elem.startswith(identifier_list)]
 
-    data1 = pd.DataFrame({'Box #01':linesDeduped})
-    data1 = data1.reset_index()
     c = st.beta_container()     
 
 #endregion text_area_01  ############################################################
@@ -144,39 +150,28 @@ with c31:
     identifier_list = ('https://', 'http://')  # tuple, not list
     notHTTP = [elem for elem in linesDeduped2 if not elem.startswith(identifier_list)]
 
-    data2 = pd.DataFrame({'Box #02':linesDeduped2})
-    
-    #st.write('data2')
-    data2 = data2.reset_index()
-
     c = st.beta_container()     
         
 #endregion text2_area_02  ############################################################
 
-mergedDF = data1.merge(data2, on='index', how='right')
-
-@st.cache(suppress_st_warning=True)
 def ratio(row):
-    name = row['Box #01']
-    name1 = row['Box #02']
+    name = row[COL_BOX1]
+    name1 = row[COL_BOX2]
     return fuzz.ratio(name, name1)
 
-@st.cache(suppress_st_warning=True)
 def partial_ratio(row):
-    name = row['Box #01']
-    name1 = row['Box #02']
+    name = row[COL_BOX1]
+    name1 = row[COL_BOX2]
     return fuzz.partial_ratio(name, name1)
 
-@st.cache(suppress_st_warning=True)
 def token_sort_ratio(row):
-    name = row['Box #01']
-    name1 = row['Box #02']
+    name = row[COL_BOX1]
+    name1 = row[COL_BOX2]
     return fuzz.token_sort_ratio(name, name1)
 
-@st.cache(suppress_st_warning=True)
 def token_set_ratio(row):
-    name = row['Box #01']
-    name1 = row['Box #02']
+    name = row[COL_BOX1]
+    name1 = row[COL_BOX2]
     return fuzz.token_set_ratio(name, name1)
 
 #endregion
@@ -185,158 +180,192 @@ def token_set_ratio(row):
 
 #mergedDF
 
-dfRatio = mergedDF.copy()
+@st.cache
+def prepareDF(linesDeduped1, linesDeduped2):
+    dfRatio = pd.DataFrame({
+        COL_BOX1: linesDeduped1,
+        COL_BOX2: linesDeduped2,
+    })
 
-#partial_ratio
-dfRatio['Partial Ratio'] = dfRatio.apply(partial_ratio, axis = 1)
-dfRatio['Partial Ratio'] = dfRatio['Partial Ratio'].astype(np.float64)
+    # Ratio
+    dfRatio[COL_PARTIAL] = dfRatio.apply(partial_ratio, axis=1)
+    dfRatio[COL_TOKEN_SET] = dfRatio.apply(token_sort_ratio, axis=1)
+    dfRatio[COL_TOKEN_SORT] = dfRatio.apply(token_set_ratio, axis=1)
 
-#2nd ratio
-dfRatio['token_sort_ratio'] = dfRatio.apply(token_sort_ratio, axis = 1)
-dfRatio['token_sort_ratio'] = dfRatio['token_sort_ratio'].astype(np.float64)
+    # Cast columns to float64
+    dfRatio.astype({
+        COL_PARTIAL: np.float64,
+        COL_TOKEN_SET: np.float64,
+        COL_TOKEN_SORT: np.float64,
+    }, copy=False)
 
-#3rd ratio
-dfRatio['Token Set Ratio'] = dfRatio.apply(token_set_ratio, axis = 1)
-dfRatio['Token Set Ratio'] = dfRatio['Token Set Ratio'].astype(np.float64)
+    PartialRatio = pd.DataFrame({"ratio": dfRatio[COL_PARTIAL]})
+    PartialRatio['algoType'] = COL_PARTIAL
+    PartialRatio['ratioClass'] = np.where(dfRatio[COL_BOX1] == dfRatio[COL_BOX2],
+                                    'Duplicate',
+                                    np.where(dfRatio[COL_BOX2] == '/'
+                                    , 'Redirects to Home P.',
+                                    np.where(PartialRatio.ratio >= 80,
+                                    'HighScore',
+                                    np.where(PartialRatio.ratio >= 40,
+                                    'MediumScore',
+                                    'Low score'))))
+
+    #region [Table] token_sort_ratio table ########################################################################
+
+    dfToken = pd.DataFrame({"ratio": dfRatio[COL_TOKEN_SORT]})
+    dfToken['algoType'] = COL_TOKEN_SORT
+    dfToken['ratioClass'] = np.where(dfRatio[COL_BOX1] == dfRatio[COL_BOX2],
+                                    'Duplicate',
+                                    np.where(dfRatio[COL_BOX2] == '/',
+                                    'Redirects to Home P.',
+                                    np.where(dfToken.ratio >= 80,
+                                    'HighScore',
+                                    np.where(dfToken.ratio >= 40,
+                                    'MediumScore',
+                                    'Low score'))))
+
+    #endregion
+
+    #region [Table] token_set_ratio table ########################################################################
+
+    dfTokenSet = pd.DataFrame({"ratio": dfRatio[COL_TOKEN_SET]})
+    dfTokenSet['algoType'] = COL_TOKEN_SET
+    dfTokenSet['ratioClass'] = np.where(dfRatio[COL_BOX1] == dfRatio[COL_BOX2],
+                                    'Duplicate',
+                                    np.where(dfRatio[COL_BOX2] == '/',
+                                    'Redirects to Home P.',
+                                    np.where(dfTokenSet.ratio >= 80,
+                                    'HighScore',
+                                    np.where(dfTokenSet.ratio >= 40,
+                                    'MediumScore',
+                                    'Low score'))))
+
+    #endregion
+
+    #region [Table] Append all tables #################################################################
+
+    dfNew = PartialRatio.append([dfToken,dfTokenSet])
+
+    #region [Table] Pivot table 
+    ########################################################################
 
 
-PartialRatio = dfRatio.copy()
-PartialRatio = PartialRatio.drop(['Token Set Ratio','token_sort_ratio'], axis=1)
-PartialRatio.rename(columns={'Partial Ratio':'ratio'}, inplace=True)
+    ########################################################################
 
-PartialRatio['ratioClass'] = np.where(PartialRatio['Box #01'] == PartialRatio['Box #02'],
+    #if not (text and text2):
+    #    st.success('aaa')
+    #    st.stop()
+
+    ########################################################################
+
+    dfPivot1 = pd.pivot_table(dfNew, values='ratio', index=['ratioClass', 'algoType'], aggfunc=len).reset_index('algoType')
+    dfPivot1['ratioName'] = dfPivot1.index
+    dfPivot1['algoType'] = dfPivot1.replace({
+        'algoType': {
+            COL_TOKEN_SET: "Token Set ratio count",
+            COL_TOKEN_SORT: "Token Sort ratio count", 
+            COL_PARTIAL: "Partial count"
+        }
+    })
+
+    #with st.beta_expander("ℹ️ - Display dfPivot", expanded=True):
+    #
+    #    c29, c30, c31 = st.beta_columns([8,1,8])
+    #
+    #
+    #    #with c29:
+    #    #    st.write('test')
+    #    #    #st.write('dfPivot1')
+    #    #    #dfPivot1
+    #    #    #dfPivot1.to_csv('dfPivot1.csv')
+    #    
+    #    with c31:
+
+
+    dfTemplate = pd.DataFrame({
+        #'index':[1,2,3,4,5,6,7,8,9],
+        'algoType':['Partial count','Token Set ratio count','Token Sort ratio count','Partial count','Token Set ratio count','Token Sort ratio count','Partial count','Token Set ratio count','Token Sort ratio count','Partial count','Token Set ratio count','Token Sort ratio count'],
+        'ratio':[0,0,0,0,0,0,0,0,0,0,0,0],
+        'ratioName':['Duplicate','Duplicate','Duplicate','HighScore','HighScore','HighScore','MediumScore','MediumScore','MediumScore','Low score','Low score','Low score']})
+
+    #st.write('dfTemplate')
+    #dfTemplate
+
+    #dfTemplate.to_csv('dfTemplate.csv')
+
+    dfMerged3 = pd.concat([dfTemplate, dfPivot1])     
+    dfMerged3.drop_duplicates(subset=['algoType','ratioName'], inplace=True, keep='last')       
+    dfMerged3 = dfMerged3.sort_values(['ratioName','algoType'], ascending=[True, True])
+
+    #st.write('dfMerged3')
+    #dfMerged3
+
+
+    dfPivotFiltered1 = dfMerged3.loc[dfMerged3['ratioName'] == 'HighScore']
+    dfPivotFiltered2 = dfMerged3.loc[dfMerged3['ratioName'] == 'MediumScore']
+    dfPivotFiltered3 = dfMerged3.loc[dfMerged3['ratioName'] == 'Duplicate']
+    dfPivotFiltered4 = dfMerged3.loc[dfMerged3['ratioName'] == 'Low score']
+
+
+    listHighScore = dfPivotFiltered1['ratio'].tolist()
+    listMediumScore = dfPivotFiltered2['ratio'].tolist()
+    listLow = dfPivotFiltered4['ratio'].tolist()
+    listDuplicate = dfPivotFiltered3['ratio'].tolist()
+
+    #st.write("listLow")
+    #listLow
+    #st.write("listDuplicate")
+    #listDuplicate
+    #st.write("listMediumScore")
+    #listMediumScore
+    #st.write("listHighScore")
+    #listHighScore
+
+    #Pivot_dict = dict(zip(dfPivot1.ratio,  dfPivot1.algoType))
+    #Pivot_dict
+
+    # Compute duplicates
+    dfRatio['Duplicate'] = np.where(dfRatio[COL_BOX1] == dfRatio[COL_BOX2],
                                 'Duplicate',
-                                np.where(PartialRatio['Box #02'] == '/'
-                                , 'Redirects to Home P.',
-                                np.where(PartialRatio.ratio >= 80,
-                                'HighScore',
-                                np.where(PartialRatio.ratio >= 40,
-                                'MediumScore',
-                                'Low score'))))
-
-PartialRatio['algoType'] = 'Partial Ratio'
-
-
-#region [Table] token_sort_ratio table ########################################################################
-
-dfToken = dfRatio.copy()
-dfToken = dfToken.drop(['Partial Ratio','Token Set Ratio'], axis=1)
-dfToken.rename(columns={'token_sort_ratio':'ratio'}, inplace=True)
-
-dfToken['ratioClass'] = np.where(dfToken['Box #01'] == dfToken['Box #02'],
-                                'Duplicate',
-                                np.where(dfToken['Box #02'] == '/',
+                                np.where(dfRatio[COL_BOX2] == '/',
                                 'Redirects to Home P.',
-                                np.where(dfToken.ratio >= 80,
-                                'HighScore',
-                                np.where(dfToken.ratio >= 40,
-                                'MediumScore',
-                                'Low score'))))
+                                'OK'))
 
-dfToken['algoType'] = 'token_sort_ratio'
+    # Cast columns to int64
+    dfRatio.astype({
+        COL_PARTIAL: np.int64,
+        COL_TOKEN_SET: np.int64,
+        COL_TOKEN_SORT: np.int64,
+    }, copy=False)
 
-  #endregion
-
-  #region [Table] token_set_ratio table ########################################################################
-
-dfTokenSet = dfRatio.copy()
-dfTokenSet = dfTokenSet.drop(['Partial Ratio','token_sort_ratio'], axis=1)
-dfTokenSet.rename(columns={'Token Set Ratio':'ratio'}, inplace=True)
-
-dfTokenSet['ratioClass'] = np.where(dfTokenSet['Box #01'] == dfTokenSet['Box #02'],
-                                'Duplicate',
-                                np.where(dfTokenSet['Box #02'] == '/',
-                                'Redirects to Home P.',
-                                np.where(dfTokenSet.ratio >= 80,
-                                'HighScore',
-                                np.where(dfTokenSet.ratio >= 40,
-                                'MediumScore',
-                                'Low score'))))
-
-
-dfTokenSet['algoType'] = 'Token Set Ratio'
-
-
-#endregion
-
-#region [Table] Append all tables #################################################################
-
-dfNew = PartialRatio.append([dfToken,dfTokenSet])
-
-#region [Table] Pivot table 
-########################################################################
+    return {
+        "df": dfRatio,
+        "duplicate": listDuplicate,
+        "unique_duplicate": dfRatio["Duplicate"].unique(),  # Not used
+        "scores": {
+            "low": listLow,
+            "medium": listMediumScore,
+            "high": listHighScore,
+        },
+        "range": {
+            COL_PARTIAL: {
+                "min": dfRatio[COL_PARTIAL].min(),
+                "max": dfRatio[COL_PARTIAL].max(),
+            },
+            COL_TOKEN_SET: {
+                "min": dfRatio[COL_TOKEN_SET].min(),
+                "max": dfRatio[COL_TOKEN_SET].max(),
+            },
+            COL_TOKEN_SORT: {
+                "min": dfRatio[COL_TOKEN_SORT].min(),
+                "max": dfRatio[COL_TOKEN_SORT].max(),
+            }
+        }
+    }
 
 
-########################################################################
-
-#if not (text and text2):
-#    st.success('aaa')
-#    st.stop()
-
-########################################################################
-
-dfPivot1 = pd.pivot_table(dfNew, values='ratio', index=['ratioClass', 'algoType'], aggfunc=len).reset_index('algoType')
-dfPivot1['algoType'] = dfPivot1.replace({'algoType' : { 'Token Set Ratio' : "Token Set ratio count", 'token_sort_ratio' : "Token Sort ratio count", 'Partial Ratio' : "Partial count"}})
-dfPivot1['ratioName'] = dfPivot1.index
-
-#with st.beta_expander("ℹ️ - Display dfPivot", expanded=True):
-#
-#    c29, c30, c31 = st.beta_columns([8,1,8])
-#
-#
-#    #with c29:
-#    #    st.write('test')
-#    #    #st.write('dfPivot1')
-#    #    #dfPivot1
-#    #    #dfPivot1.to_csv('dfPivot1.csv')
-#    
-#    with c31:
-
-
-dfTemplate = pd.DataFrame({
-    #'index':[1,2,3,4,5,6,7,8,9],
-    'algoType':['Partial count','Token Set ratio count','Token Sort ratio count','Partial count','Token Set ratio count','Token Sort ratio count','Partial count','Token Set ratio count','Token Sort ratio count','Partial count','Token Set ratio count','Token Sort ratio count'],
-    'ratio':[0,0,0,0,0,0,0,0,0,0,0,0],
-    'ratioName':['Duplicate','Duplicate','Duplicate','HighScore','HighScore','HighScore','MediumScore','MediumScore','MediumScore','Low score','Low score','Low score']})
-
-#st.write('dfTemplate')
-#dfTemplate
-
-#dfTemplate.to_csv('dfTemplate.csv')
-
-dfMerged3 = pd.concat([dfTemplate,dfPivot1])     
-dfMerged3.drop_duplicates(subset=['algoType','ratioName'], inplace=True, keep='last')       
-dfMerged3 = dfMerged3.sort_values(['ratioName','algoType' ], ascending=[True, True])
-
-#st.write('dfMerged3')
-#dfMerged3
-
-
-dfPivotFiltered1 = dfMerged3.loc[dfMerged3['ratioName'] == 'HighScore']
-dfPivotFiltered2 = dfMerged3.loc[dfMerged3['ratioName'] == 'MediumScore']
-dfPivotFiltered3 = dfMerged3.loc[dfMerged3['ratioName'] == 'Duplicate']
-dfPivotFiltered4 = dfMerged3.loc[dfMerged3['ratioName'] == 'Low score']
-
-
-listHighScore = dfPivotFiltered1['ratio'].tolist()
-listMediumScore = dfPivotFiltered2['ratio'].tolist()
-listLow = dfPivotFiltered4['ratio'].tolist()
-listDuplicate = dfPivotFiltered3['ratio'].tolist()
-
-#st.write("listLow")
-#listLow
-#st.write("listDuplicate")
-#listDuplicate
-#st.write("listMediumScore")
-#listMediumScore
-#st.write("listHighScore")
-#listHighScore
-
-Pivot_dict = dict(zip(dfPivot1.ratio,  dfPivot1.algoType))
-#Pivot_dict
-
-
-
+data = prepareDF(linesDeduped1, linesDeduped2)
 
 st.markdown('## ** ▼ Check results or download CSV **')
 
@@ -373,14 +402,9 @@ Algolist = []
 
 c1000 = st.beta_container()   
 
-
-
-
-
 c0, c0a, c1, c1a, c2, c2a, c3 = st.beta_columns([6,0.2,6,1,6,1,6])
 
 with c1:
-
     two  = st.checkbox("Partial Ratio", value=True)
     c1 = st.beta_container()
     if two:
@@ -449,7 +473,7 @@ opts = {
                 "show": True,
                 "position": 'insideLeft'
             },
-            "data": listDuplicate
+            "data": data["duplicate"]
         },
         {
             "name": 'High score (80-100)',
@@ -459,7 +483,7 @@ opts = {
                 "show": True,
                 "position": 'insideLeft'
             },
-            "data": listHighScore
+            "data": data["scores"]["high"]
         },
         {
             "name": 'Medium score (40-80)',
@@ -469,7 +493,7 @@ opts = {
                 "show": True,
                 "position": 'insideLeft'
             },
-            "data": listMediumScore
+            "data": data["scores"]["medium"]
         },
         {
             "name": 'Low score (0-40)',
@@ -479,15 +503,12 @@ opts = {
                 "show": True,
                 "position": 'insideLeft'
             },
-            "data": listLow
+            "data": data["scores"]["low"]
         },
 
     ]
-};
+}
 
-
-
-dfFiltered = mergedDF.copy()
 
 with c1000.beta_container():
     #st_echarts(opts, width = 1500, height= 400)
@@ -495,61 +516,43 @@ with c1000.beta_container():
 
 #region multiselect ############################################################
 
-if one == True:
+# No need to copy
+# The following filtering operations won't alter the dataframe (no column drop), they just define a "view"
+dfFiltered = data["df"]  
 
-    maxValueToken_set = int(dfRatio['Token Set Ratio'].max())
-    minValueToken_set = int(dfRatio['Token Set Ratio'].min())
 
-    if minValueToken_set < maxValueToken_set:
-        Token_set_slider = c2.slider('', minValueToken_set, maxValueToken_set, value = int(maxValueToken_set), step = 1, key = 10)
-        dfFiltered['Token Set Ratio'] = dfFiltered.apply(token_set_ratio, axis = 1)
-        dfFiltered['Token Set Ratio'] = dfFiltered['Token Set Ratio'].astype(np.int64)
-        dfFiltered.rename(columns = {'Token Set Ratio':'Token Set'}, inplace = True)
-        dfFiltered = dfFiltered[(dfFiltered['Token Set'] <= Token_set_slider)]
+def filter_if(condition, df, column, error_msg, step=1, key=None):
+    if not condition:
+        # Filter out the column, does not drop it
+        return df[df.columns.difference([column])]
+
     else:
-        pass
-        #st.markdown("No T-Set slider as `minValue` = `maxValue`")
+        value_min = int(data["range"][column]["min"])
+        value_max = int(data["range"][column]["max"])
 
-if two == True:
+        if value_min < value_max:
+            slider_value = st.slider('', value_min, value_max, value=value_max, step=step, key=key)
+            df = df[(df[column] <= slider_value)]
 
-    maxValuePartial = int(dfRatio['Partial Ratio'].max())
-    minValuePartial = int(dfRatio['Partial Ratio'].min())
-
-    if minValuePartial < maxValuePartial:
-        Partial_slider = c1.slider('', minValuePartial, maxValuePartial, value = int(maxValuePartial), step = 1)
-        dfFiltered['Partial Ratio'] = dfFiltered.apply(partial_ratio, axis = 1)
-        dfFiltered['Partial Ratio'] = dfFiltered['Partial Ratio'].astype(np.int64)
-        dfFiltered.rename(columns = {'Partial Ratio':'Partial'}, inplace = True)
-        dfFiltered = dfFiltered[(dfFiltered['Partial'] <= Partial_slider)]
-    else:
-        pass
-
-
-if three == True:
-
-        # THEN add related slider
-        maxValueToken_sort = int(dfRatio['token_sort_ratio'].max())
-        minValueToken_sort = int(dfRatio['token_sort_ratio'].min())
-
-        if minValueToken_sort < maxValueToken_sort:
-            
-            Token_sort_slider = c3.slider('', minValueToken_sort, maxValueToken_sort, value = int(maxValueToken_sort), step = 1, key = 1)
-            dfFiltered['token_sort_ratio'] = dfFiltered.apply(token_sort_ratio, axis = 1)
-            dfFiltered['token_sort_ratio'] = dfFiltered['token_sort_ratio'].astype(np.int64)
-            dfFiltered.rename(columns = {'token_sort_ratio':'Token Sort'}, inplace = True)
-            dfFiltered = dfFiltered[(dfFiltered['Token Sort'] <= Token_sort_slider)]
-        
-        else:   
+        else:
             pass
-            #st.markdown("No T-Sort slider as `minValue` = `maxValue`")
+            #st.error(error_msg)
 
-dfFiltered['Duplicate'] = np.where(dfFiltered['Box #01'] == dfFiltered['Box #02'],
-                                'Duplicate',
-                                np.where(dfFiltered['Box #02'] == '/',
-                                'Redirects to Home P.',
-                                'OK'))
+        return df
 
-AllUniqueValues = list(dfFiltered['Duplicate'].unique())
+
+with c2:
+    error_msg = "No T-Set slider as `minValue` == `maxValue`"
+    dfFiltered = filter_if(one, dfFiltered, COL_TOKEN_SET, error_msg, key=10)
+
+with c1:
+    error_msg = "No Partial slider as `minValue` == `maxValue`"
+    dfFiltered = filter_if(two, dfFiltered, COL_PARTIAL, error_msg)
+
+with c3:
+    error_msg = "No T-Sort slider as `minValue` == `maxValue`"
+    dfFiltered = filter_if(three, dfFiltered, COL_TOKEN_SORT, error_msg, key=1)
+
 
 loopBox = c0.checkbox('Only show duplicates', key = 100) 
 
@@ -560,8 +563,6 @@ c0.write('')
 
 if loopBox:
     dfFiltered = dfFiltered[dfFiltered['Duplicate'] == "Duplicate"]
-
-del dfFiltered['index']
 
 
 def where(x):
@@ -582,9 +583,9 @@ try:
 
     st.markdown('---')
 
-    #dfFiltered = dfFiltered[['Box #02','Box #01']]
+    #dfFiltered = dfFiltered[[COL_BOX2,COL_BOX1]]
     
-    #dfFiltered = dfFiltered[['Box #01','Box #02','Partial','Token Set','Token Sort','Duplicate']]
+    #dfFiltered = dfFiltered[[COL_BOX1,COL_BOX2,'Partial','Token Set','Token Sort','Duplicate']]
     #dfFiltered
     #st.stop()
 
@@ -706,5 +707,3 @@ with c30:
         -   bear fuzzy 
 
                 """)
-
-
