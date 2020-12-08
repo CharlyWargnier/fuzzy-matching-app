@@ -512,7 +512,7 @@ opts = {
 
 with c1000.beta_container():
     #st_echarts(opts, width = 1500, height= 400)
-    st_echarts(opts, width = 1600, height= 375)
+    st_echarts(opts, width = 1600, height= 375, key="chart")
 
 #region multiselect ############################################################
 
